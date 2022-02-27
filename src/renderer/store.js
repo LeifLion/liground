@@ -1,7 +1,7 @@
 import Vue from 'vue'
 import Vuex from 'vuex'
 import ffish from 'ffish'
-import engine from './engine'
+import { engine } from './engine'
 import allEngines from './store/engines'
 
 import moveAudio from './assets/audio/Move.mp3'
@@ -105,12 +105,20 @@ const filteredSettings = ['UCI_Variant', 'UCI_Chess960']
 
 export const store = new Vuex.Store({
   state: {
+    engineIndex: 1,
+    enginesActive: [false],
     initialized: false,
     active: false,
     PvE: false,
-    PvEParam: 'go movetime 5000',
+    PvEParam: 'go movetime 1000',
     PvEValue: 'time',
-    PvEInput: 5000,
+    PvEInput: 1000,
+    resized: 0,
+    resized9x9height: 0,
+    resized9x9width: 0,
+    resized9x10height: 0,
+    resized9x10width: 0,
+    dimNumber: 0,
     turn: true,
     fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
     lastFen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', // to track the end of the current line
@@ -138,6 +146,7 @@ export const store = new Vuex.Store({
 
     }),
     openedPGN: false,
+    QuickTourIndex: 0,
     evalPlotDepth: 20,
     orientation: 'white',
     message: 'hello from Vuex',
@@ -150,6 +159,7 @@ export const store = new Vuex.Store({
       options: []
     },
     engineSettings: {},
+    listOfEngineStats: [],
     engineStats: {
       depth: 0,
       seldepth: 0,
@@ -167,6 +177,12 @@ export const store = new Vuex.Store({
         ucimove: ''
       }
     ],
+    numberOfEngines: [
+      {
+        number: 1
+      }
+    ],
+    engineCounter: 1,
     hoveredpv: -1,
     counter: 0,
     pieceStyle: 'cburnett',
@@ -202,6 +218,10 @@ export const store = new Vuex.Store({
     clock: null
   },
   mutations: { // sync
+    increaseEngineNumber (state) {
+      state.numberOfEngines.push({ number: 2 })
+      state.engineCounter++
+    },
     curVar960Fen (state, payload) {
       state.curVar960Fen = payload
     },
@@ -210,6 +230,12 @@ export const store = new Vuex.Store({
     },
     fen (state, payload) {
       state.fen = payload
+    },
+    engineIndex (state, payload) {
+      state.engineIndex = payload
+    },
+    enginesActive (state, payload) {
+      state.enginesActive = payload
     },
     startFen (state, payload) {
       state.startFen = payload
@@ -255,6 +281,33 @@ export const store = new Vuex.Store({
     },
     PvEInput (state, payload) {
       state.PvEInput = payload
+    },
+    quicktourIndexIncr (state) {
+      state.QuickTourIndex++
+    },
+    quicktourIndexDecr (state) {
+      state.QuickTourIndex--
+    },
+    quicktourSetZero (state) {
+      state.QuickTourIndex = 0
+    },
+    dimNumber (state, payload) {
+      state.dimNumber = payload
+    },
+    resized (state, payload) {
+      state.resized = payload
+    },
+    resized9x9width (state, payload) {
+      state.resized9x9width = payload
+    },
+    resized9x9height (state, payload) {
+      state.resized9x9height = payload
+    },
+    resized9x10width (state, payload) {
+      state.resized9x10width = payload
+    },
+    resized9x10height (state, payload) {
+      state.resized9x10height = payload
     },
     active (state, payload) {
       state.active = payload
@@ -482,6 +535,12 @@ export const store = new Vuex.Store({
       localStorage.muteButton = state.muteButton
       localStorage.evalPlotDepth = state.evalPlotDepth
       localStorage.variant = state.variant
+      localStorage.resized = state.resized
+      localStorage.resized9x9width = state.resized9x9width
+      localStorage.resized9x9height = state.resized9x9height
+      localStorage.resized9x10width = state.resized9x10width
+      localStorage.resized9x10height = state.resized9x10height
+      localStorage.dimNumber = state.dimNumber
     }
   },
   actions: { // async
@@ -604,6 +663,24 @@ export const store = new Vuex.Store({
     setPvEInput (context, payload) {
       context.commit('PvEInput', payload)
     },
+    setDimNumber (context, payload) {
+      context.commit('dimNumber', payload)
+    },
+    setResized (context, payload) {
+      context.commit('resized', payload)
+    },
+    setResized9x9width (context, payload) {
+      context.commit('resized9x9width', payload)
+    },
+    setResized9x9height (context, payload) {
+      context.commit('resized9x9height', payload)
+    },
+    setResized9x10width (context, payload) {
+      context.commit('resized9x10width', payload)
+    },
+    setResized9x10height (context, payload) {
+      context.commit('resized9x10height', payload)
+    },
     goEngine (context) {
       engine.send('go infinite')
       context.commit('setEngineClock')
@@ -612,13 +689,15 @@ export const store = new Vuex.Store({
     goEnginePvE (context) {
       engine.send(context.getters.PvEParam)
       context.commit('setEngineClock')
-      context.commit('active', true)
     },
     setActiveTrue (context) {
       context.commit('active', true)
     },
     setActiveFalse (context) {
       context.commit('active', false)
+    },
+    enginesActive (context, payload) {
+      context.commit('enginesActive', payload)
     },
     PvEtrue (context) {
       context.commit('PvE', true)
@@ -628,7 +707,12 @@ export const store = new Vuex.Store({
     },
     PvEfalse (context) {
       context.commit('PvE', false)
-      context.dispatch('stopEngine')
+      if (!context.getters.turn) {
+        context.dispatch('stopEngine')
+      } else {
+        context.commit('resetEngineTime')
+        context.commit('active', false)
+      }
       context.dispatch('resetEngineData')
     },
     stopEngine (context) {
@@ -643,7 +727,6 @@ export const store = new Vuex.Store({
         context.dispatch('position')
         context.dispatch('goEngine')
       } else if (context.getters.active && context.getters.PvE && !context.getters.turn) {
-        context.dispatch('stopEngine')
         context.dispatch('position')
         context.dispatch('goEnginePvE')
       }
@@ -700,6 +783,9 @@ export const store = new Vuex.Store({
     PvE (context, payload) {
       context.commit('PvE', payload)
     },
+    engineIndex (context, payload) {
+      context.commit('engineIndex', payload)
+    },
     PvEParam (context, payload) {
       context.commit('PvEParam', payload)
     },
@@ -708,6 +794,24 @@ export const store = new Vuex.Store({
     },
     PvEInput (context, payload) {
       context.commit('PvEInput', payload)
+    },
+    dimNumber (context, payload) {
+      context.commit('dimNumber', payload)
+    },
+    resized (context, payload) {
+      context.commit('resized', payload)
+    },
+    resized9x9width (context, payload) {
+      context.commit('resized9x9width', payload)
+    },
+    resized9x9height (context, payload) {
+      context.commit('resized9x9height', payload)
+    },
+    resized9x10width (context, payload) {
+      context.commit('resized9x10width', payload)
+    },
+    resized9x10height (context, payload) {
+      context.commit('resized9x10height', payload)
     },
     variant (context, payload) {
       if (context.getters.variant !== payload) {
@@ -870,7 +974,9 @@ export const store = new Vuex.Store({
       context.dispatch('setEngineOptions', options)
     },
     setEngineOptions (context, payload) {
-      if (context.getters.active) {
+      if (context.getters.active && !context.getters.PvE) {
+        context.dispatch('stopEngine')
+      } else if (context.getters.active && context.getters.PvE && !context.getters.turn) {
         context.dispatch('stopEngine')
       }
       context.dispatch('resetEngineData')
@@ -1023,6 +1129,15 @@ export const store = new Vuex.Store({
     switchDarkMode (context) {
       context.commit('switchDarkMode')
     },
+    quicktourIndexIncr (context) {
+      context.commit('quicktourIndexIncr')
+    },
+    quicktourIndexDecr (context) {
+      context.commit('quicktourIndexDecr')
+    },
+    quicktourSetZero (context) {
+      context.commit('quicktourSetZero')
+    },
     switchMuteButton (context) {
       context.commit('switchMuteButton')
     },
@@ -1034,6 +1149,15 @@ export const store = new Vuex.Store({
     }
   },
   getters: {
+    engineNumber (state) {
+      return state.numberOfEngines
+    },
+    engineIndex (state) {
+      return state.engineIndex
+    },
+    enginesActive (state) {
+      return state.enginesActive
+    },
     currentMove (state) {
       return state.moves.filter(moves => moves.fen === state.fen)
     },
@@ -1070,6 +1194,24 @@ export const store = new Vuex.Store({
     },
     PvEInput (state) {
       return state.PvEInput
+    },
+    dimNumber (state) {
+      return state.dimNumber
+    },
+    resized (state) {
+      return state.resized
+    },
+    resized9x9width (state) {
+      return state.resized9x9width
+    },
+    resized9x9height (state) {
+      return state.resized9x9height
+    },
+    resized9x10width (state) {
+      return state.resized9x10width
+    },
+    resized9x10height (state) {
+      return state.resized9x10height
     },
     started (state) {
       return state.started
@@ -1312,6 +1454,9 @@ export const store = new Vuex.Store({
     },
     darkMode (state) {
       return state.darkMode
+    },
+    QuickTourIndex (state) {
+      return state.QuickTourIndex
     },
     muteButton (state) {
       return state.muteButton
